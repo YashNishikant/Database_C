@@ -10,7 +10,7 @@ CFLAGS = -std=c99 -g -Wall -fsanitize=address,undefined
 all: $(TARGET)
 # Rule to build the target
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) -lm
 
 # Clean up
 clean:
