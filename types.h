@@ -103,6 +103,54 @@ typedef struct
     bool end_of_table;
 } Cursor;
 
+typedef uint32_t PageID;
+typedef uint32_t Key;
+
+#define INTERNAL_NODE_MAX_KEYS 248
+#define LEAF_NODE_MAX_KEYS 248
+#define MAX_TREE_HEIGHT 16
+
+typedef enum
+{
+    NODE_INTERNAL,
+    NODE_LEAF
+} NodeType;
+
+typedef struct
+{
+    PageID page_id;
+    uint32_t offset;
+} RowID;
+
+typedef struct
+{
+    RowID row_id;
+    void *row_loc;
+} RowSlot;
+
+typedef struct
+{
+    uint32_t num_keys;
+    Key keys[INTERNAL_NODE_MAX_KEYS];
+    PageID page_ids[INTERNAL_NODE_MAX_KEYS + 1];
+} InternalNode;
+
+typedef struct
+{
+    uint32_t num_keys;
+    Key keys[LEAF_NODE_MAX_KEYS];
+    RowID row_ids[LEAF_NODE_MAX_KEYS];
+    PageID next_leaf;
+} LeafNode;
+
+typedef struct
+{
+    uint32_t length;
+    PageID array[MAX_TREE_HEIGHT];
+} PageStack;
+
+// page 1 | key 1 | page 2 | key 2 | page 3 | key 3 | page 4 | key 4 | page 5
+
 const uint32_t HEADER_SIZE = sizeof(PageHeader);
 const uint32_t ID_SIZE = sizeof(((Row *)0)->id);
 const uint32_t USERNAME_SIZE = sizeof(((Row *)0)->username);
