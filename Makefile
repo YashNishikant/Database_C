@@ -1,30 +1,28 @@
-# # Makefile
-# CC = gcc
-# # The target executable
-# TARGET = db
-# # Source files
-# SRC = db.c b_tree.c
-# # Flags
-# CFLAGS = -std=c99 -g -Wall -fsanitize=address,undefined
-# # Default rule
-# all: $(TARGET)
-
-# # Rule to build the target
-# db: db.c b_tree.c
-# 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) -lm
-
-# db.c: types.h
-
-# # Clean up
-# clean:
-# 	rm -f $(TARGET)
-
 CC = gcc
 CFLAGS = -g -Wall -std=c99 -fsanitize=address,undefined
+TARGET = db
 
-all: db
+# Object files
+OBJS = db.o b_tree.o types.o
 
-db: db.o 
-	$(CC) $(CFLAGS) $^ -o $@
+# Default rule
+all: $(TARGET)
 
-db.o: types.h
+# Link step
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET)
+
+# Compile db.c
+db.o: db.c b_tree.h types.h
+	$(CC) $(CFLAGS) -c db.c
+
+# Compile btree.c
+b_tree.o: b_tree.c b_tree.h types.h
+	$(CC) $(CFLAGS) -c b_tree.c
+
+# Compile types.c
+types.o: types.c types.h
+	$(CC) $(CFLAGS) -c types.c
+
+clean:
+	rm -f $(OBJS) $(TARGET)

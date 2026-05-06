@@ -15,7 +15,9 @@
 #define COLUMN_EMAIL_SIZE 255
 #define MAX_TABLE_PAGES 1000
 
-const uint32_t PAGE_SIZE = 4096; // 4kb ✅
+#define INTERNAL_NODE_MAX_KEYS 248
+#define LEAF_NODE_MAX_KEYS 248
+#define MAX_TREE_HEIGHT 16
 
 typedef uint32_t PageID;
 
@@ -107,10 +109,6 @@ typedef struct
 typedef uint32_t PageID;
 typedef uint32_t Key;
 
-#define INTERNAL_NODE_MAX_KEYS 248
-#define LEAF_NODE_MAX_KEYS 248
-#define MAX_TREE_HEIGHT 16
-
 typedef enum
 {
     NODE_INTERNAL,
@@ -151,22 +149,17 @@ typedef struct
     PageID new_right_node;
 } InsertResult;
 
-// page 1 | key 1 | page 2 | key 2 | page 3 | key 3 | page 4 | key 4 | page 5
-
-// page 1 | key 1 | page 2 | key 2 | page 3 | key 3 | key 4 | page 4 | key 5 | page 5
-
-// key 1  |  key 2  |  key 3  |  key 4  |
-// page 1 |  page 2 |  page 3 |  page 4 |  page 5 |
-
-const uint32_t HEADER_SIZE = sizeof(PageHeader);
-const uint32_t ID_SIZE = sizeof(((Row *)0)->id);
-const uint32_t USERNAME_SIZE = sizeof(((Row *)0)->username);
-const uint32_t EMAIL_SIZE = sizeof(((Row *)0)->email);
-const uint32_t ID_OFFSET = 0;
-const uint32_t USERNAME_OFFSET = ID_OFFSET + ID_SIZE;
-const uint32_t EMAIL_OFFSET = USERNAME_OFFSET + USERNAME_SIZE;
-const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
-const uint32_t ROWS_PER_PAGE = ((PAGE_SIZE - HEADER_SIZE) / ROW_SIZE);
-const uint32_t TABLE_MAX_ROWS = ROWS_PER_PAGE * MAX_TABLE_PAGES;
+// Sizing constants (extern in types.c)
+extern const uint32_t PAGE_SIZE;
+extern const uint32_t HEADER_SIZE;
+extern const uint32_t ID_SIZE;
+extern const uint32_t USERNAME_SIZE;
+extern const uint32_t EMAIL_SIZE;
+extern const uint32_t ID_OFFSET;
+extern const uint32_t USERNAME_OFFSET;
+extern const uint32_t EMAIL_OFFSET;
+extern const uint32_t ROW_SIZE;
+extern const uint32_t ROWS_PER_PAGE;
+extern const uint32_t TABLE_MAX_ROWS;
 
 #endif
