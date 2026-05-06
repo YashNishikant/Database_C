@@ -13,7 +13,7 @@
 
 #define COLUMN_USERNAME_SIZE 32
 #define COLUMN_EMAIL_SIZE 255
-#define MAX_TABLE_PAGES 100
+#define MAX_TABLE_PAGES 1000
 
 const uint32_t PAGE_SIZE = 4096; // 4kb ✅
 
@@ -62,7 +62,8 @@ typedef enum
 typedef enum
 {
     STATEMENT_INSERT,
-    STATEMENT_SELECT
+    STATEMENT_SELECT,
+    STATEMENT_INSERT_BULK
 } StatementType;
 
 typedef struct
@@ -90,7 +91,7 @@ typedef struct
     uint32_t num_rows;
     Pager *pager;
     PageID latest_heap_page;
-    PageID latest_node_page;
+    PageID latest_page;
     PageID root;
     uint32_t latest_heap_row;
 } Table;
@@ -119,7 +120,7 @@ typedef enum
 typedef struct
 {
     PageID page_id;
-    uint32_t offset;
+    uint32_t page_byte_offset;
 } RowID;
 
 typedef struct
@@ -131,25 +132,31 @@ typedef struct
 typedef struct
 {
     uint32_t num_keys;
-    Key keys[INTERNAL_NODE_MAX_KEYS];
-    PageID page_ids[INTERNAL_NODE_MAX_KEYS + 1];
+    Key keys[INTERNAL_NODE_MAX_KEYS + 1];
+    PageID page_ids[INTERNAL_NODE_MAX_KEYS + 2];
 } InternalNode;
 
 typedef struct
 {
     uint32_t num_keys;
-    Key keys[LEAF_NODE_MAX_KEYS];
-    RowID row_ids[LEAF_NODE_MAX_KEYS];
+    Key keys[LEAF_NODE_MAX_KEYS + 1]; // leave space for +1 overflow before splitting
+    RowID row_ids[LEAF_NODE_MAX_KEYS + 1];
     PageID next_leaf;
 } LeafNode;
 
 typedef struct
 {
-    uint32_t length;
-    PageID array[MAX_TREE_HEIGHT];
-} PageStack;
+    bool split;
+    Key promoted_key;
+    PageID new_right_node;
+} InsertResult;
 
 // page 1 | key 1 | page 2 | key 2 | page 3 | key 3 | page 4 | key 4 | page 5
+
+// page 1 | key 1 | page 2 | key 2 | page 3 | key 3 | key 4 | page 4 | key 5 | page 5
+
+// key 1  |  key 2  |  key 3  |  key 4  |
+// page 1 |  page 2 |  page 3 |  page 4 |  page 5 |
 
 const uint32_t HEADER_SIZE = sizeof(PageHeader);
 const uint32_t ID_SIZE = sizeof(((Row *)0)->id);
