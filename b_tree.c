@@ -7,7 +7,6 @@
 #include <sys/stat.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include "b_tree.h"
 
 // void b_tree_(PageID root, RowID row_id, Key key)
 // {
