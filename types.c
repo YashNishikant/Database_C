@@ -9,12 +9,10 @@
 #include <stdint.h>
 #include "types.h"
 
-// page 1 | key 1 | page 2 | key 2 | page 3 | key 3 | page 4 | key 4 | page 5
+// page 0 | key 1 | page 1 | key 2 | page 2 | key 3 | page 3 | key 4 | page 4
 
-// page 1 | key 1 | page 2 | key 2 | page 3 | key 3 | key 4 | page 4 | key 5 | page 5
-
-// key 1  |  key 2  |  key 3  |  key 4  |
-// page 1 |  page 2 |  page 3 |  page 4 |  page 5 |
+//      key 1  |  key 2  |  key 3  |  key 4  |
+// page 0 |  page 1 |  page 2 |  page 3 |  page 4 |
 
 const uint32_t PAGE_SIZE = 4096; // 4kb ✅
 const uint32_t HEADER_SIZE = sizeof(PageHeader);
@@ -27,3 +25,5 @@ const uint32_t EMAIL_OFFSET = USERNAME_OFFSET + USERNAME_SIZE;
 const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
 const uint32_t ROWS_PER_PAGE = ((PAGE_SIZE - HEADER_SIZE) / ROW_SIZE);
 const uint32_t TABLE_MAX_ROWS = ROWS_PER_PAGE * MAX_TABLE_PAGES;
+const uint32_t MIN_KEYS_INTERNAL = INTERNAL_NODE_MAX_KEYS / 2;
+const uint32_t MIN_KEYS_LEAF = LEAF_NODE_MAX_KEYS / 2;

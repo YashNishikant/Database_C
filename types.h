@@ -17,7 +17,6 @@
 
 #define INTERNAL_NODE_MAX_KEYS 248
 #define LEAF_NODE_MAX_KEYS 248
-#define MAX_TREE_HEIGHT 16
 
 typedef uint32_t PageID;
 
@@ -43,7 +42,8 @@ typedef struct
 typedef enum
 {
     EXECUTE_SUCCESS,
-    EXECUTE_TABLE_FULL
+    EXECUTE_TABLE_FULL,
+    EXECUTE_TABLE_EMPTY,
 } ExecuteResult;
 
 typedef enum
@@ -65,7 +65,8 @@ typedef enum
 {
     STATEMENT_INSERT,
     STATEMENT_SELECT,
-    STATEMENT_INSERT_BULK
+    STATEMENT_INSERT_BULK,
+    STATEMENT_DELETE
 } StatementType;
 
 typedef struct
@@ -78,7 +79,7 @@ typedef struct
 typedef struct
 {
     StatementType type;
-    Row row_to_insert;
+    Row target_row;
 } Statement;
 
 typedef struct
@@ -130,7 +131,7 @@ typedef struct
 typedef struct
 {
     uint32_t num_keys;
-    Key keys[INTERNAL_NODE_MAX_KEYS + 1];
+    Key keys[INTERNAL_NODE_MAX_KEYS + 1]; // leave space for +1 overflow before splitting
     PageID page_ids[INTERNAL_NODE_MAX_KEYS + 2];
 } InternalNode;
 
@@ -149,6 +150,23 @@ typedef struct
     PageID new_right_node;
 } InsertResult;
 
+typedef struct
+{
+    Key copy_up;      // if there is no merge, and we find the key in an internal node, it must be replaced with the most extreme value of its subtree
+                      // ex. if a node borrowed and element
+    bool underfilled; // tells us if a child node must borrow elements...
+    bool DNE;         // use if the key does not exist. lets the recursive algor know to collapse
+} DeleteResult;
+
+typedef struct
+{
+    PageID InternalPage;
+    Key InternalIndex;
+    PageID LeafPage;
+    Key LeafIndex;
+    RowID Row_ID;
+} SearchResult;
+
 // Sizing constants (extern in types.c)
 extern const uint32_t PAGE_SIZE;
 extern const uint32_t HEADER_SIZE;
@@ -161,5 +179,6 @@ extern const uint32_t EMAIL_OFFSET;
 extern const uint32_t ROW_SIZE;
 extern const uint32_t ROWS_PER_PAGE;
 extern const uint32_t TABLE_MAX_ROWS;
-
+extern const uint32_t MIN_KEYS_INTERNAL;
+extern const uint32_t MIN_KEYS_LEAF;
 #endif

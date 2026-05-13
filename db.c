@@ -15,13 +15,6 @@ char *getInput(InputBuffer *input_buffer);
 InputBuffer *createInputBuffer();
 PrepareResult prepareCommand(InputBuffer *input_buffer, Statement *statement);
 ExecuteResult execute_statement(Statement *statement, Table *table);
-ExecuteResult execute_insert(Statement *statement, Table *table);
-ExecuteResult execute_select(Statement *statement, Table *table);
-InsertResult insert_key(Table *table, PageID root_leaf_page_id, Key key_to_insert, RowID *row_slot);
-uint32_t array_insert_key_row_pair(Key *key_arr, RowID *row_arr, Key key_value, RowID row_value, uint32_t *key_arr_len, uint32_t *row_arr_len);
-uint32_t array_insert_key(Key *key_arr, Key key_value, uint32_t *key_arr_len);
-uint32_t allocate_page_leaf(Table *table, PageHeader *page_header, LeafNode *node);
-uint32_t allocate_page_internal(Table *table, PageHeader *page_header, InternalNode *node);
 
 void writeRow(Row *source, void *dest)
 {
@@ -105,7 +98,13 @@ int main(int argc, char *argv[])
 
     Pager *pager = open_pager(fileame);
 
+    // TODO: FIX HOW NUM_ROWS IS DEFINED
+    // Your open_pager() always initializes pages 1 and 2 fresh,
+    // even if the file exists. On restart, you'd lose your data.
+    // You should only initialize those pages if the file is new (size 0).
+
     table->num_rows = pager->file_length / ROW_SIZE;
+
     table->pager = pager;
     table->latest_heap_row = 0;
     table->latest_heap_page = 2;
@@ -204,9 +203,9 @@ PrepareResult prepareCommand(InputBuffer *input_buffer, Statement *statement)
         if (strlen(email) > COLUMN_EMAIL_SIZE)
             return PREPARATION_STRING_OVERFLOW;
 
-        statement->row_to_insert.id = id;
-        strcpy(statement->row_to_insert.username, username);
-        strcpy(statement->row_to_insert.email, email);
+        statement->target_row.id = id;
+        strcpy(statement->target_row.username, username);
+        strcpy(statement->target_row.email, email);
 
         return PREPARE_SUCCESS;
     }
@@ -226,7 +225,7 @@ ExecuteResult execute_statement(Statement *statement, Table *table)
         return execute_insert(statement, table);
     else if (statement->type == STATEMENT_INSERT_BULK)
     {
-        for (int i = 0; i < 3000; i++)
+        for (int i = 0; i < 10000; i++)
         {
             Row row;
             row.id = i + 1;
@@ -257,12 +256,15 @@ ExecuteResult execute_statement(Statement *statement, Table *table)
 
             Statement stmt;
             stmt.type = STATEMENT_INSERT;
-            stmt.row_to_insert = row;
-            printf("inserting id %d\n", stmt.row_to_insert.id);
+            stmt.target_row = row;
+            printf("inserting id %d\n", stmt.target_row.id);
             execute_insert(&stmt, table);
         }
         return EXECUTE_SUCCESS;
     }
+
+    else if (statement->type == STATEMENT_DELETE)
+        return execute_delete(statement, table);
 
     return EXECUTE_TABLE_FULL;
 }
