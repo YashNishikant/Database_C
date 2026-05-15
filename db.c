@@ -53,8 +53,10 @@ Pager *open_pager(char *filename)
     int fd = open(filename, O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
 
     if (fd == -1)
+    {
+        printf("7EXIT FAILURE");
         exit(EXIT_FAILURE);
-
+    }
     off_t filesize = lseek(fd, 0, SEEK_END);
     Pager *pager = malloc(sizeof(Pager));
     pager->file_descriptor = fd;
@@ -182,6 +184,25 @@ PrepareResult prepareCommand(InputBuffer *input_buffer, Statement *statement)
         statement->type = STATEMENT_SELECT;
         return PREPARE_SUCCESS;
     }
+    if (strncmp(input_buffer->buffer, "delete", 6) == 0)
+    {
+        statement->type = STATEMENT_DELETE;
+
+        char *keyword = strtok(input_buffer->buffer, " ");
+        char *id_delete = strtok(NULL, " ");
+
+        if (id_delete == NULL)
+            return PREPARATION_SYNTAX_ERROR;
+
+        int id = atoi(id_delete);
+
+        if (id < 0)
+            return PREPARATION_NEGATIVE_ID;
+
+        statement->target_row.id = id;
+
+        return PREPARE_SUCCESS;
+    }
     else if (strncmp(input_buffer->buffer, "insert", 6) == 0)
     {
         statement->type = STATEMENT_INSERT;
@@ -214,6 +235,11 @@ PrepareResult prepareCommand(InputBuffer *input_buffer, Statement *statement)
         statement->type = STATEMENT_INSERT_BULK;
         return PREPARE_SUCCESS;
     }
+    if (strncmp(input_buffer->buffer, "id", 2) == 0)
+    {
+        statement->type = STATEMENT_DELETE_BULK;
+        return PREPARE_SUCCESS;
+    }
     return PREPARATION_FAILURE;
 }
 
@@ -225,7 +251,7 @@ ExecuteResult execute_statement(Statement *statement, Table *table)
         return execute_insert(statement, table);
     else if (statement->type == STATEMENT_INSERT_BULK)
     {
-        for (int i = 0; i < 10000; i++)
+        for (int i = 1; i < 10000; i++)
         {
             Row row;
             row.id = i + 1;
@@ -266,13 +292,34 @@ ExecuteResult execute_statement(Statement *statement, Table *table)
     else if (statement->type == STATEMENT_DELETE)
         return execute_delete(statement, table);
 
+    else if (statement->type == STATEMENT_DELETE_BULK)
+    {
+
+        for (int i = 1; i < 10000; i++)
+        {
+            if (i % 2 == 0)
+            {
+                Statement stmt;
+                stmt.type = STATEMENT_DELETE;
+                stmt.target_row.id = i;
+
+                // printf("deleting id %d\n", stmt.target_row.id);
+                execute_delete(&stmt, table);
+            }
+        }
+        return EXECUTE_SUCCESS;
+    }
+
     return EXECUTE_TABLE_FULL;
 }
 
 PageHeader *get_page(Pager *pager, PageID page_num)
 {
     if (page_num > MAX_TABLE_PAGES)
+    {
+        printf("8EXIT FAILURE");
         exit(EXIT_FAILURE);
+    }
 
     PageHeader *page_header;
     if (pager->pages[page_num] == NULL)
@@ -283,15 +330,20 @@ PageHeader *get_page(Pager *pager, PageID page_num)
         if (pager->file_length % PAGE_SIZE)
             num_pages_avaliable_on_disk += 1;
 
+        printf("looking for page %d\n", page_num);
         if (page_num < num_pages_avaliable_on_disk) // go ahead and read bytes from disk into page
         {
             lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
             ssize_t bytes = read(pager->file_descriptor, page, PAGE_SIZE);
             if (bytes == -1)
+            {
+                printf("9EXIT FAILURE");
                 exit(EXIT_FAILURE);
+            }
         }
         else
         {
+            printf("10EXIT FAILURE");
             exit(EXIT_FAILURE);
         }
         // consider exit failing in an else...
@@ -306,10 +358,13 @@ PageHeader *get_page(Pager *pager, PageID page_num)
     return page_header;
 }
 
-RowSlot *get_row_slot(Pager *pager, uint32_t page_num, uint32_t row_num_offset)
+RowSlot get_row_slot(Pager *pager, uint32_t page_num, uint32_t row_num_offset)
 {
     if (page_num > MAX_TABLE_PAGES)
+    {
+        printf("1EXIT_FAILURE\n");
         exit(EXIT_FAILURE);
+    }
 
     if (pager->pages[page_num] == NULL)
     {
@@ -324,7 +379,11 @@ RowSlot *get_row_slot(Pager *pager, uint32_t page_num, uint32_t row_num_offset)
             lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
             ssize_t bytes = read(pager->file_descriptor, page, PAGE_SIZE);
             if (bytes == -1)
+            {
+
+                printf("3EXIT_FAILURE\n");
                 exit(EXIT_FAILURE);
+            }
         }
         else
         {
@@ -342,9 +401,9 @@ RowSlot *get_row_slot(Pager *pager, uint32_t page_num, uint32_t row_num_offset)
     row_id.page_id = page_num;
     row_id.page_byte_offset = byteoffset;
 
-    RowSlot *row_slot = malloc(sizeof(RowSlot));
-    row_slot->row_id = row_id;
-    row_slot->row_loc = pager->pages[page_num] + byteoffset;
+    RowSlot row_slot;
+    row_slot.row_id = row_id;
+    row_slot.row_loc = pager->pages[page_num] + byteoffset;
 
     return row_slot;
 }
@@ -403,8 +462,10 @@ void db_close(Table *table)
 
     int result = close(pager->file_descriptor);
     if (result == -1)
+    {
+        printf("2EXIT_FAILURE\n");
         exit(EXIT_FAILURE);
-
+    }
     for (uint32_t i = 0; i < MAX_TABLE_PAGES; i++)
     {
         if (pager->pages[i])
@@ -420,14 +481,22 @@ void db_close(Table *table)
 void pager_flush(Pager *pager, uint32_t page_num, uint32_t size)
 {
     if (pager->pages[page_num] == NULL)
+    {
+        printf("4EXIT_FAILURE\n");
         exit(EXIT_FAILURE);
+    }
 
     off_t offset = lseek(pager->file_descriptor, page_num * PAGE_SIZE, SEEK_SET);
 
     if (offset == -1)
+    {
+        printf("5EXIT_FAILURE\n");
         exit(EXIT_FAILURE);
-
+    }
     ssize_t bytes_written = write(pager->file_descriptor, pager->pages[page_num], size);
     if (bytes_written == -1)
+    {
+        printf("6EXIT_FAILURE\n");
         exit(EXIT_FAILURE);
+    }
 }

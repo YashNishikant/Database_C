@@ -66,6 +66,7 @@ typedef enum
     STATEMENT_INSERT,
     STATEMENT_SELECT,
     STATEMENT_INSERT_BULK,
+    STATEMENT_DELETE_BULK,
     STATEMENT_DELETE
 } StatementType;
 
@@ -152,19 +153,15 @@ typedef struct
 
 typedef struct
 {
-    Key copy_up;      // if there is no merge, and we find the key in an internal node, it must be replaced with the most extreme value of its subtree
-                      // ex. if a node borrowed and element
     bool underfilled; // tells us if a child node must borrow elements...
     bool DNE;         // use if the key does not exist. lets the recursive algor know to collapse
+    bool manipulate_leaf;
 } DeleteResult;
 
 typedef struct
 {
-    PageID InternalPage;
-    Key InternalIndex;
-    PageID LeafPage;
-    Key LeafIndex;
-    RowID Row_ID;
+    bool exists;
+    Key key;
 } SearchResult;
 
 // Sizing constants (extern in types.c)

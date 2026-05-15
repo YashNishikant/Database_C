@@ -9,9 +9,7 @@
 #include <stdint.h>
 #include "types.h"
 
-// page 0 | key 1 | page 1 | key 2 | page 2 | key 3 | page 3 | key 4 | page 4
-
-//      key 1  |  key 2  |  key 3  |  key 4  |
+//      key 0  |  key 1  |  key 2  |  key 3  |
 // page 0 |  page 1 |  page 2 |  page 3 |  page 4 |
 
 const uint32_t PAGE_SIZE = 4096; // 4kb ✅
