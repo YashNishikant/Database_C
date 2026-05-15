@@ -32,13 +32,11 @@ SearchResult get_immediate_key(Table *table, InternalNode *starting_node, uint32
 
     InternalNode *node = starting_node;
     PageID curr_page = node->page_ids[key_index_start + 1];
-    printf("1 get_page page_id=%u\n", (unsigned)curr_page);
     PageHeader *root_header = get_page(table->pager, curr_page);
 
     while (root_header->type == PAGE_INTERNAL)
     {
         node = process_page_header(root_header);
-        printf("2 get_page page_id=%u\n", (unsigned)node->page_ids[0]);
         root_header = get_page(table->pager, node->page_ids[0]); // get header of this page id that you will go to
     }
 
@@ -55,6 +53,8 @@ ExecuteResult execute_insert(Statement *statement, Table *table)
 {
     if (table->num_rows >= TABLE_MAX_ROWS)
         return EXECUTE_TABLE_FULL;
+
+    printf("inserting id %d\n", statement->target_row.id);
 
     Row *target_row = &(statement->target_row);
     RowSlot row_slot = get_row_slot(table->pager, table->latest_heap_page, table->latest_heap_row);
@@ -105,7 +105,7 @@ ExecuteResult execute_delete(Statement *statement, Table *table)
     if (table->num_rows == 0)
         return EXECUTE_TABLE_EMPTY;
 
-    printf("deleting id %d\n", statement->target_row.id);
+    // printf("deleting id %d\n", statement->target_row.id);
 
     Row *row_to_delete = &(statement->target_row);
 
@@ -115,20 +115,18 @@ ExecuteResult execute_delete(Statement *statement, Table *table)
 
     // NODE DELETE
 
-    // printf("checking %d\n\n", table->root);
-    // printf("rowid %d\n\n", statement->target_row.id);
     DeleteResult root_result = delete_key(table, table->root, statement->target_row.id);
 
     if (root_result.DNE)
     {
-        printf("Warning: Key Does Not Exist\n\n");
+        printf("Warning: Key '%u' Does Not Exist\n", statement->target_row.id);
         return EXECUTE_SUCCESS;
     }
 
     if (root_result.underfilled)
     {
-        printf("3 get_page page_id=%u\n", (unsigned)1);
-        PageHeader *root_header = get_page(table->pager, 1);
+
+        PageHeader *root_header = get_page(table->pager, table->root);
         if (root_header->type == PAGE_INTERNAL)
         {
             InternalNode *root_node = process_page_header(root_header);
@@ -136,6 +134,22 @@ ExecuteResult execute_delete(Statement *statement, Table *table)
                 table->root = root_node->page_ids[0];
         }
     }
+    else if (root_result.manipulate_leaf)
+    {
+        PageHeader *root_header = get_page(table->pager, table->root);
+        LeafNode *root_node = process_page_header(root_header);
+        Key key_to_delete = statement->target_row.id;
+
+        Key *key_ptr = bsearch(&key_to_delete, root_node->keys, root_node->num_keys, sizeof(Key), key_comparator);
+        if (key_ptr == NULL)
+        {
+            printf("Warning: Key '%u' Does Not Exist\n", statement->target_row.id);
+            return EXECUTE_SUCCESS;
+        }
+        int key_ind = key_ptr - root_node->keys; // returns the difference in units of the associated type, not bytes
+        remove_key_row_leaf(root_node, key_ind);
+    }
+
     table->num_rows--;
 
     // NODE DELETE
@@ -150,19 +164,21 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
     result.manipulate_leaf = true;
 
     // printf("checking %d\n\n", root_leaf_page_id);
-    printf("4 get_page page_id=%u\n", (unsigned)root_leaf_page_id);
+
     PageHeader *header = get_page(table->pager, root_leaf_page_id);
     if (header->type == PAGE_LEAF)
     {
         LeafNode *node = process_page_header(header);
 
         Key *key_ptr = bsearch(&key_to_delete, node->keys, node->num_keys, sizeof(Key), key_comparator);
-        int *key_ind = key_ptr - node->keys; // returns the difference in units of the associated type, not bytes
 
         if (key_ptr == NULL)
+        {
             result.DNE = true;
-        else
-            result.DNE = false;
+            return result;
+        }
+
+        result.DNE = false;
         return result;
     }
     else
@@ -182,12 +198,20 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
         if (child_result.manipulate_leaf)
         {
             PageID leaf_page_id_mid = curr_node->page_ids[dest_ind];
-            printf("5 get_page page_id=%u\n", (unsigned)leaf_page_id_mid);
+
             PageHeader *header = get_page(table->pager, leaf_page_id_mid);
             LeafNode *leaf_mid = process_page_header(header);
 
             Key *key_ptr = bsearch(&key_to_delete, leaf_mid->keys, leaf_mid->num_keys, sizeof(Key), key_comparator);
-            int *key_ind = key_ptr - leaf_mid->keys; // returns the difference in units of the associated type, not bytes
+
+            if (key_ptr == NULL)
+            {
+                DeleteResult result;
+                result.DNE = true;
+                return result;
+            }
+
+            int key_ind = key_ptr - leaf_mid->keys; // returns the difference in units of the associated type, not bytes
 
             remove_key_row_leaf(leaf_mid, key_ind);
 
@@ -205,9 +229,8 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                     PageID leaf_page_id_right = curr_node->page_ids[dest_ind + 1];
                     PageID leaf_page_id_left = curr_node->page_ids[dest_ind - 1];
 
-                    printf("6 get_page page_id=%u\n", (unsigned)leaf_page_id_right);
                     PageHeader *header_right = get_page(table->pager, leaf_page_id_right);
-                    printf("7 get_page page_id=%u\n", (unsigned)leaf_page_id_left);
+
                     PageHeader *header_left = get_page(table->pager, leaf_page_id_left);
 
                     LeafNode *node_right = process_page_header(header_right);
@@ -236,20 +259,24 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                 else if (dest_ind == 0)
                 {
                     PageID page_id_right = curr_node->page_ids[dest_ind + 1];
-                    printf("8 get_page page_id=%u\n", (unsigned)page_id_right);
-                    PageHeader *header_right = get_page(table->pager, page_id_right);
-                    InternalNode *node_right = process_page_header(header_right);
 
-                    if (node_right->num_keys > MIN_KEYS_LEAF)
+                    PageHeader *header_right = get_page(table->pager, page_id_right);
+                    LeafNode *leaf_right = process_page_header(header_right);
+
+                    // you must make leaf_mid the dest
+                    // and leaf_right the new leaf_mid
+
+                    if (leaf_right->num_keys > MIN_KEYS_LEAF)
                     {
                         seperator_key_index = dest_ind;
-                        node_sib = node_right;
+                        node_sib = leaf_right;
                         node_sib_key_ind = 0;
                     }
                     else
                     {
                         seperator_key_index = dest_ind;
                         node_merge_dest = leaf_mid;
+                        leaf_mid = leaf_right;
                         page_id_merge_dest = leaf_page_id_mid;
                         merge = true;
                     }
@@ -257,9 +284,9 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                 else if (dest_ind == curr_node->num_keys)
                 {
                     PageID page_id_left = curr_node->page_ids[dest_ind - 1];
-                    printf("9 get_page page_id=%u\n", (unsigned)page_id_left);
+
                     PageHeader *header_left = get_page(table->pager, page_id_left);
-                    InternalNode *node_left = process_page_header(header_left);
+                    LeafNode *node_left = process_page_header(header_left);
 
                     if (node_left->num_keys > MIN_KEYS_LEAF) // left can give
                     {
@@ -283,7 +310,7 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                     remove_key_row_leaf(node_sib, node_sib_key_ind);
 
                     // parent separator to always be first key of the rightmost
-                    printf("10 get_page page_id=%u\n", (unsigned)curr_node->page_ids[seperator_key_index + 1]);
+
                     PageHeader *rightmost_page_header = get_page(table->pager, curr_node->page_ids[seperator_key_index + 1]);
                     LeafNode *rightmost_leaf = process_page_header(rightmost_page_header);
                     curr_node->keys[seperator_key_index] = rightmost_leaf->keys[0];
@@ -309,7 +336,7 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                     // remove parent separator key after merging two leaf children
                     Key k_temp;
                     RowID r_temp;
-                    printf("1, separator_key_ind %d\n", seperator_key_index);
+
                     remove_key_page_internal(curr_node, seperator_key_index, &k_temp, &r_temp);
                     curr_node->page_ids[seperator_key_index] = page_id_merge_dest;
 
@@ -334,7 +361,7 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
             PageID page_id_merge_dest = 0;
             bool merge = false;
             PageID page_id_mid = curr_node->page_ids[dest_ind];
-            printf("11 get_page page_id=%u\n", (unsigned)page_id_mid);
+
             PageHeader *header_mid = get_page(table->pager, page_id_mid);
             InternalNode *node_mid = process_page_header(header_mid);
             int seperator_key_index = -1;
@@ -345,9 +372,8 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                 PageID page_id_right = curr_node->page_ids[dest_ind + 1];
                 PageID page_id_left = curr_node->page_ids[dest_ind - 1];
 
-                printf("12 get_page page_id=%u\n", (unsigned)page_id_right);
                 PageHeader *header_right = get_page(table->pager, page_id_right);
-                printf("13 get_page page_id=%u\n", (unsigned)page_id_left);
+
                 PageHeader *header_left = get_page(table->pager, page_id_left);
 
                 InternalNode *node_right = process_page_header(header_right);
@@ -376,7 +402,7 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
             else if (dest_ind == 0)
             {
                 PageID page_id_right = curr_node->page_ids[dest_ind + 1];
-                printf("14 get_page page_id=%u\n", (unsigned)page_id_right);
+
                 PageHeader *header_right = get_page(table->pager, page_id_right);
                 InternalNode *node_right = process_page_header(header_right);
 
@@ -390,6 +416,7 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                 {
                     seperator_key_index = dest_ind;
                     node_merge_dest = node_mid;
+                    node_mid = node_right;
                     page_id_merge_dest = page_id_mid;
                     merge = true;
                 }
@@ -397,7 +424,7 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
             else if (dest_ind == curr_node->num_keys)
             {
                 PageID page_id_left = curr_node->page_ids[dest_ind - 1];
-                printf("15 get_page page_id=%u\n", (unsigned)page_id_left);
+
                 PageHeader *header_left = get_page(table->pager, page_id_left);
                 InternalNode *node_left = process_page_header(header_left);
 
@@ -421,13 +448,11 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                 PageID removed_page;
                 Key removed_key;
 
-                printf("2, separator_key_ind %d\n", seperator_key_index);
-                remove_key_page_internal(curr_node->keys, seperator_key_index, &removed_key, &removed_page);
-                array_insert_key_page_pair(node_mid->keys, node_mid->page_ids, &removed_key, &removed_page, &node_mid->num_keys);
+                remove_key_page_internal(curr_node, seperator_key_index, &removed_key, &removed_page);
+                array_insert_key_page_pair(node_mid->keys, node_mid->page_ids, removed_key, removed_page, &node_mid->num_keys);
 
-                printf("3, separator_key_ind %d\n", seperator_key_index);
-                remove_key_page_internal(node_sib->keys, node_sib_key_ind, &removed_key, &removed_page);
-                array_insert_key_page_pair(curr_node->keys, curr_node->page_ids, &removed_key, &removed_page, &curr_node->num_keys);
+                remove_key_page_internal(node_sib, node_sib_key_ind, &removed_key, &removed_page);
+                array_insert_key_page_pair(curr_node->keys, curr_node->page_ids, removed_key, removed_page, &curr_node->num_keys);
 
                 // take care of parent separator
                 SearchResult search_res = get_immediate_key(table, curr_node, seperator_key_index);
@@ -447,22 +472,20 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
 
                 seperator_key_index = dest_ind - 1;
 
-                for (int i = node_mid->num_keys; i >= 0; i--)
+                for (int i = node_mid->num_keys - 1; i >= 0; i--)
                 {
                     PageID removed_page;
                     Key removed_key;
 
-                    printf("4, i %d\n", i);
-                    remove_key_page_internal(node_mid->keys, i, &removed_key, &removed_page);
-                    array_insert_key_page_pair(node_merge_dest->keys, node_merge_dest->page_ids, &removed_key, &removed_page, &node_merge_dest->num_keys);
+                    remove_key_page_internal(node_mid, i, &removed_key, &removed_page);
+                    array_insert_key_page_pair(node_merge_dest->keys, node_merge_dest->page_ids, removed_key, removed_page, &node_merge_dest->num_keys);
                 }
 
                 PageID removed_page;
                 Key removed_key;
 
-                printf("5, seperator_key_index %d\n", seperator_key_index);
-                remove_key_page_internal(curr_node->keys, seperator_key_index, &removed_key, &removed_page);
-                array_insert_key_page_pair(node_merge_dest->keys, node_merge_dest->page_ids, &removed_key, &removed_page, &node_merge_dest->num_keys);
+                remove_key_page_internal(curr_node, seperator_key_index, &removed_key, &removed_page);
+                array_insert_key_page_pair(node_merge_dest->keys, node_merge_dest->page_ids, removed_key, removed_page, &node_merge_dest->num_keys);
 
                 curr_node->page_ids[seperator_key_index] = page_id_merge_dest;
 
@@ -475,6 +498,12 @@ DeleteResult delete_key(Table *table, PageID root_leaf_page_id, Key key_to_delet
                 return result;
             }
         }
+
+        DeleteResult result;
+        result.DNE = false;
+        result.manipulate_leaf = false;
+        result.underfilled = false;
+        return result;
     }
 }
 
@@ -569,7 +598,7 @@ InsertResult split_node_internal(InternalNode *node, Key *keys, PageID *pages, T
 
 InsertResult insert_key(Table *table, PageID root_leaf_page_id, Key key_to_insert, RowID row_slot)
 {
-    printf("16 get_page page_id=%u\n", (unsigned)root_leaf_page_id);
+
     PageHeader *root_node_header = get_page(table->pager, root_leaf_page_id);
 
     if (root_node_header->type == PAGE_LEAF)
@@ -727,7 +756,7 @@ ExecuteResult execute_select(Statement *statement, Table *table)
 
     Row temp;
     PageID root_page = table->root;
-    printf("17 get_page page_id=%u\n", (unsigned)table->root);
+
     PageHeader *rootheader = get_page(table->pager, table->root);
 
     if (rootheader->type == PAGE_LEAF)
@@ -750,7 +779,7 @@ ExecuteResult execute_select(Statement *statement, Table *table)
         while (rootheader->type == PAGE_INTERNAL)
         {
             PageID next_page = root->page_ids[0];
-            printf("18 get_page page_id=%u\n", (unsigned)next_page);
+
             rootheader = get_page(table->pager, next_page);
 
             curr_page_id = root->page_ids[0];
@@ -762,7 +791,7 @@ ExecuteResult execute_select(Statement *statement, Table *table)
 
         while (curr_page_id != 0)
         {
-            printf("19 get_page page_id=%u\n", (unsigned)curr_page_id);
+
             rootheader = get_page(table->pager, curr_page_id);
             leaf = ((char *)rootheader + sizeof(PageHeader));
 

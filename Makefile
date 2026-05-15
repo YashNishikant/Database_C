@@ -3,7 +3,7 @@ CFLAGS = -g -Wall -std=c99 -fsanitize=address,undefined
 TARGET = db
 
 # Object files
-OBJS = db.o b_tree.o types.o
+OBJS = db.o b_tree.o types.o operations.o
 
 # Default rule
 all: $(TARGET)
@@ -23,6 +23,10 @@ b_tree.o: b_tree.c b_tree.h types.h
 # Compile types.c
 types.o: types.c types.h
 	$(CC) $(CFLAGS) -c types.c
+
+# Compile operations.c
+operations.o: operations.c operations.h
+	$(CC) $(CFLAGS) -c operations.c
 
 clean:
 	rm -f $(OBJS) $(TARGET)
