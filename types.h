@@ -86,6 +86,7 @@ typedef struct
 typedef struct
 {
     int file_descriptor;
+    int file_descriptor_constants;
     uint32_t file_length;
     void *pages[MAX_TABLE_PAGES];
 } Pager;

@@ -23,21 +23,8 @@ int main(int argc, char *argv[])
     InputBuffer *input_buffer = createInputBuffer();
     Table *table = (Table *)malloc(sizeof(Table));
 
-    Pager *pager = open_pager(fileame);
+    Pager *pager = init_pager_and_table(fileame, table);
 
-    // TODO: FIX HOW NUM_ROWS IS DEFINED
-    // Your open_pager() always initializes pages 1 and 2 fresh,
-    // even if the file exists. On restart, you'd lose your data.
-    // You should only initialize those pages if the file is new (size 0).
-
-    table->num_rows = pager->file_length / ROW_SIZE;
-
-    table->pager = pager;
-    table->latest_heap_row = 0;
-    table->latest_heap_page = 2;
-    table->latest_page = 2;
-    // latest node page is 1
-    table->root = 1;
     // DB_OPEN
 
     while (1)

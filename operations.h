@@ -7,7 +7,7 @@ void writeRow(Row *source, void *dest);
 void readRow(void *source, Row *dest);
 InputBuffer *createInputBuffer();
 char *getInput(InputBuffer *input_buffer);
-Pager *open_pager(char *filename);
+Pager *init_pager_and_table(char *filename, Table *table);
 int execute_meta_command(char *buffer, Table *table);
 PrepareResult prepareCommand(InputBuffer *input_buffer, Statement *statement);
 ExecuteResult execute_statement(Statement *statement, Table *table);

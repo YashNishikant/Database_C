@@ -45,9 +45,13 @@ char *getInput(InputBuffer *input_buffer)
     input_buffer->buffer[input_buffer->input_size] = 0;
 }
 
-Pager *open_pager(char *filename)
+Pager *init_pager_and_table(char *filename, Table *table)
 {
     int fd = open(filename, O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
+    char buf[255];
+    strcpy(buf, filename);
+    strcpy(buf + strlen(filename), "-consts\0");
+    int fd_consts = open(buf, O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
 
     if (fd == -1)
     {
@@ -57,26 +61,63 @@ Pager *open_pager(char *filename)
     off_t filesize = lseek(fd, 0, SEEK_END);
     Pager *pager = malloc(sizeof(Pager));
     pager->file_descriptor = fd;
+    pager->file_descriptor_constants = fd_consts;
     pager->file_length = filesize; // byte offset
 
     for (int i = 0; i < MAX_TABLE_PAGES; i++)
         pager->pages[i] = NULL;
 
-    pager->pages[1] = calloc(1, PAGE_SIZE);
-    PageHeader page_header;
-    page_header.type = PAGE_LEAF;
-    memcpy(pager->pages[1], &page_header, sizeof(PageHeader));
+    if (filesize == 0)
+    {
+        pager->pages[1] = calloc(1, PAGE_SIZE);
+        PageHeader page_header;
+        page_header.type = PAGE_LEAF;
+        memcpy(pager->pages[1], &page_header, sizeof(PageHeader));
 
-    LeafNode leaf_node_root;
-    leaf_node_root.num_keys = 0;
-    leaf_node_root.next_leaf = 0; // null page
+        LeafNode leaf_node_root;
+        leaf_node_root.num_keys = 0;
+        leaf_node_root.next_leaf = 0; // null page
 
-    memcpy((char *)(pager->pages[1]) + sizeof(PageHeader), &leaf_node_root, sizeof(LeafNode));
+        memcpy((char *)(pager->pages[1]) + sizeof(PageHeader), &leaf_node_root, sizeof(LeafNode));
 
-    pager->pages[2] = calloc(1, PAGE_SIZE);
-    PageHeader page_header2;
-    page_header2.type = PAGE_HEAP;
-    memcpy(pager->pages[2], &page_header2, sizeof(PageHeader));
+        pager->pages[2] = calloc(1, PAGE_SIZE);
+        PageHeader page_header2;
+        page_header2.type = PAGE_HEAP;
+        memcpy(pager->pages[2], &page_header2, sizeof(PageHeader));
+
+        table->num_rows = 0;
+        table->pager = pager;
+        table->latest_heap_row = 0;
+        table->latest_heap_page = 2;
+        table->latest_page = 2;
+        // latest node page is 1
+        table->root = 1;
+    }
+    else
+    {
+        pager->pages[1] = get_page(pager, 1);
+
+        uint32_t num_rows;
+        PageID latest_heap_page;
+        PageID latest_page;
+        PageID root;
+        uint32_t latest_heap_row;
+
+        uint32_t *attr_ptrs[5] = {&num_rows, &latest_heap_page, &latest_page, &root, &latest_heap_row};
+
+        for (int i = 0; i < 5; i++)
+        {
+            lseek(fd_consts, i * (sizeof(uint32_t)), SEEK_SET);
+            read(fd_consts, attr_ptrs[i], sizeof(uint32_t));
+        }
+
+        table->num_rows = num_rows;
+        table->latest_heap_page = latest_heap_page;
+        table->latest_page = latest_page;
+        table->root = root;
+        table->latest_heap_row = latest_heap_row;
+        table->pager = pager;
+    }
 
     return pager;
 }
@@ -85,8 +126,8 @@ int execute_meta_command(char *buffer, Table *table)
 {
     if (strcmp(buffer, ".exit") == 0)
     {
-        exit(0);
         db_close(table);
+        exit(0);
     } // more else ifs to come...
     else
     {
@@ -182,17 +223,7 @@ ExecuteResult execute_statement(Statement *statement, Table *table)
             }
             buffer[5] = '\0';
 
-            buffer2[5] = '@';
-            buffer2[6] = 'g';
-            buffer2[7] = 'm';
-            buffer2[8] = 'a';
-            buffer2[9] = 'i';
-            buffer2[10] = 'l';
-            buffer2[11] = '.';
-            buffer2[12] = 'c';
-            buffer2[13] = 'o';
-            buffer2[14] = 'm';
-            buffer2[15] = '\0';
+            strcpy(buffer2 + 5, "@gmail.com\0");
 
             strcpy(row.username, buffer);
             strcpy(row.email, buffer2);
@@ -350,27 +381,17 @@ void db_close(Table *table)
 {
     // TODO: FIX AND FLUSH FOR ALL INITLIAZED PAGES. DONT DEPEND ON ROW COUNT
     // THIS ALSO ASSUMES ALL PAGES ARE HEAP. FIX THIS
+    pager_constants_flush(table);
 
     Pager *pager = table->pager;
-    uint32_t number_full_pages = table->num_rows / ROWS_PER_PAGE;
-    for (uint32_t i = 0; i < number_full_pages; i++)
+    uint32_t number_full_pages = table->latest_page;
+    for (uint32_t i = 0; i <= number_full_pages; i++)
     {
         if (pager->pages[i] != NULL)
         {
             pager_flush(pager, i, PAGE_SIZE);
             free(pager->pages[i]);
             pager->pages[i] = NULL;
-        }
-    }
-
-    uint32_t remainder_rows = table->num_rows % ROWS_PER_PAGE;
-    if (remainder_rows > 0)
-    {
-        if (pager->pages[number_full_pages] != NULL)
-        {
-            pager_flush(pager, number_full_pages, remainder_rows * ROW_SIZE);
-            free(pager->pages[number_full_pages]);
-            pager->pages[number_full_pages] = NULL;
         }
     }
 
@@ -392,11 +413,25 @@ void db_close(Table *table)
     free(table);
 }
 
+void pager_constants_flush(Table *table)
+{
+
+    uint32_t constants[5] = {table->num_rows, table->latest_heap_page, table->latest_page, table->root, table->latest_heap_row};
+    lseek(table->pager->file_descriptor_constants, 0, SEEK_SET);
+    ssize_t bytes_written = write(table->pager->file_descriptor_constants, constants, sizeof(constants));
+
+    if (bytes_written == -1)
+    {
+        printf("EXIT FAILURE -> pager_constants_flush(): write() failure\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
 void pager_flush(Pager *pager, uint32_t page_num, uint32_t size)
 {
     if (pager->pages[page_num] == NULL)
     {
-        printf("EXIT FAILURE -> pager_flush(): NULL Page not allowed");
+        printf("EXIT FAILURE -> pager_flush(): NULL Page not allowed\n");
         exit(EXIT_FAILURE);
     }
 
@@ -408,6 +443,7 @@ void pager_flush(Pager *pager, uint32_t page_num, uint32_t size)
         exit(EXIT_FAILURE);
     }
     ssize_t bytes_written = write(pager->file_descriptor, pager->pages[page_num], size);
+
     if (bytes_written == -1)
     {
         printf("EXIT FAILURE -> pager_flush(): write() Failure");

@@ -4,6 +4,7 @@ TARGET = db
 
 # Object files
 OBJS = db.o b_tree.o types.o operations.o
+OUT = hi
 
 # Default rule
 all: $(TARGET)
@@ -30,3 +31,5 @@ operations.o: operations.c operations.h
 
 clean:
 	rm -f $(OBJS) $(TARGET)
+	rm -f $(OUT)
+	rm -f $(OUT)-consts
